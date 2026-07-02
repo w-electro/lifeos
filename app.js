@@ -391,7 +391,16 @@ $("syncBtn").addEventListener("click", async () => {
   try {
     const r = await fetch(url, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (r.ok) { setStatus(`${entries.length} entries synced ✓`); }
-    else { const e = await r.json(); setStatus((e.message || "").includes("Bad credentials") ? "Bad token — update it below" : `Sync failed: ${e.message || r.status}`); $("tokenRow").hidden = false; }
+    else {
+      const e = await r.json().catch(() => ({}));
+      const msg = (e.message || "").toLowerCase();
+      let hint = `Sync failed (${r.status})`;
+      if (msg.includes("bad credentials")) hint = "Bad token — re-enter it below";
+      else if (r.status === 404) hint = "Token can't access lifeos-data — check repo + Contents: Write permission";
+      else if (r.status === 422) hint = "Sync conflict — try again";
+      setStatus(hint);
+      $("tokenRow").hidden = false;
+    }
   } catch { setStatus("Network error"); }
 });
 
