@@ -244,4 +244,22 @@ input[type="range"] {
 .btn-outline:active { opacity: 0.75; }
 .import-status { font-size: 0.82rem; color: var(--text-dim); }
 
+.token-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.token-row input {
+  flex: 1;
+  background: var(--ink);
+  border: 1px solid var(--gold-dim);
+  border-radius: 0.55rem;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+}
+.token-row input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.token-save { margin-top: 0; width: auto; flex-shrink: 0; }
+
 footer { text-align: center; color: var(--text-dim); font-size: 0.78rem; padding-top: 1.5rem; }

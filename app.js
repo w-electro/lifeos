@@ -357,6 +357,53 @@ $("importFile").addEventListener("change", (e) => {
   reader.readAsText(file);
 });
 
+// ---- github sync ----
+const GH_REPO   = "w-electro/lifeos-data";
+const GH_FILE   = "journal-entries/entries.json";
+const GH_BRANCH = "main";
+
+const getToken = () => localStorage.getItem("gh_token") || "";
+const setStatus = (msg, sticky) => {
+  $("importStatus").textContent = msg;
+  if (!sticky) setTimeout(() => { if ($("importStatus").textContent === msg) $("importStatus").textContent = ""; }, 3000);
+};
+
+$("syncBtn").addEventListener("click", async () => {
+  if (!getToken()) { $("tokenRow").hidden = false; $("tokenInput").focus(); return; }
+  const entries = store.get("journal", []);
+  if (!entries.length) { setStatus("Nothing to sync"); return; }
+  setStatus("Syncing…", true);
+
+  const headers = {
+    "Authorization": `Bearer ${getToken()}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const url = `https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
+
+  let sha = null;
+  try { const r = await fetch(url, { headers }); if (r.ok) sha = (await r.json()).sha; } catch {}
+
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(entries, null, 2))));
+  const body = { message: `sync: journal ${dateKey}`, content, branch: GH_BRANCH };
+  if (sha) body.sha = sha;
+
+  try {
+    const r = await fetch(url, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (r.ok) { setStatus(`${entries.length} entries synced ✓`); }
+    else { const e = await r.json(); setStatus((e.message || "").includes("Bad credentials") ? "Bad token — update it below" : `Sync failed: ${e.message || r.status}`); $("tokenRow").hidden = false; }
+  } catch { setStatus("Network error"); }
+});
+
+$("tokenSave").addEventListener("click", () => {
+  const t = $("tokenInput").value.trim();
+  if (!t) return;
+  localStorage.setItem("gh_token", t);
+  $("tokenInput").value = "";
+  $("tokenRow").hidden = true;
+  setStatus("Token saved — tap Sync ↑");
+});
+
 // ---- export ----
 $("exportBtn").addEventListener("click", () => {
   const journal = store.get("journal", []);

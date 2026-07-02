@@ -123,7 +123,12 @@
       <label class="btn btn-outline" for="importFile">Import</label>
       <input type="file" id="importFile" accept=".txt,.json" style="display:none">
       <button class="btn btn-outline" id="exportBtn" type="button">Export</button>
+      <button class="btn btn-outline" id="syncBtn" type="button">Sync ↑</button>
       <span class="import-status" id="importStatus"></span>
+    </div>
+    <div class="token-row" id="tokenRow" hidden>
+      <input type="password" id="tokenInput" placeholder="GitHub token  ghp_…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn btn-outline token-save" id="tokenSave" type="button">Save</button>
     </div>
     <p class="hint empty-hint" id="historyEmpty">No entries yet. Write your first one.</p>
     <div id="historyList"></div>
