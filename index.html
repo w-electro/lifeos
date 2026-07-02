@@ -4,12 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>LifeOS</title>
-  <meta name="description" content="Your personal life strategy system. Morning strategy, evening reflection, honest goals.">
-
+  <meta name="description" content="Track yourself.">
   <meta name="theme-color" content="#0C0B09">
   <link rel="manifest" href="manifest.json">
 
-  <!-- iOS PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -20,7 +18,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="offline-note" id="offlineNote" hidden>Offline — your entries are safe on this device.</div>
+  <div class="offline-note" id="offlineNote" hidden>Offline — entries are saved on this device.</div>
 
   <header class="masthead">
     <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
@@ -31,43 +29,115 @@
     <p class="date" id="dateLine"></p>
   </header>
 
-  <main>
-    <!-- Signature: the day arc -->
-    <section class="day-arc" aria-label="Time of day">
-      <svg viewBox="0 0 320 130" id="arcSvg">
-        <path d="M30 112 A130 130 0 0 1 290 112" fill="none" stroke="var(--gold-dim)" stroke-width="1.5"/>
-        <line x1="12" y1="112" x2="308" y2="112" stroke="var(--gold-dim)" stroke-width="1.5"/>
-        <circle id="sunDot" r="7" fill="var(--gold)"/>
-      </svg>
-      <p class="phase" id="phaseLine"></p>
-    </section>
+  <!-- Tab bar -->
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="journal" role="tab" aria-selected="true">Journal</button>
+    <button class="tab" data-tab="history" role="tab" aria-selected="false">History</button>
+    <button class="tab" data-tab="goals" role="tab" aria-selected="false">Goals</button>
+  </nav>
 
-    <section class="card" id="todayCard">
-      <h2 id="entryHeading">Morning strategy</h2>
-      <p class="hint" id="entryHint"></p>
-      <textarea id="entryText" rows="7" placeholder="" spellcheck="false"></textarea>
+  <!-- JOURNAL TAB -->
+  <section class="tab-panel active" id="tab-journal">
+    <div class="card">
+      <div class="entry-header">
+        <h2 id="entryHeading">Today's entry</h2>
+        <span class="entry-date" id="entryDate"></span>
+      </div>
+
+      <div class="field-group">
+        <label for="f-sleep">Time of sleep</label>
+        <input type="text" id="f-sleep" placeholder="e.g. 12:30 AM">
+      </div>
+
+      <div class="field-group">
+        <label for="f-mood">Mood</label>
+        <input type="text" id="f-mood" placeholder="How are you feeling?">
+      </div>
+
+      <div class="field-group">
+        <label for="f-thoughts">Thoughts</label>
+        <textarea id="f-thoughts" rows="4" placeholder="What's on your mind?"></textarea>
+      </div>
+
+      <div class="field-group">
+        <label for="f-motivation">Motivation</label>
+        <input type="text" id="f-motivation" placeholder="What's driving you today?">
+      </div>
+
+      <div class="field-group">
+        <label for="f-reality">Perception of Reality</label>
+        <textarea id="f-reality" rows="2" placeholder="How does the world feel right now?"></textarea>
+      </div>
+
+      <div class="metrics-row">
+        <div class="metric">
+          <label for="f-energy">Energy <span id="f-energy-val" class="metric-val">—</span></label>
+          <input type="range" id="f-energy" min="1" max="10" step="1">
+        </div>
+        <div class="metric">
+          <label for="f-focus">Focus <span id="f-focus-val" class="metric-val">—</span></label>
+          <input type="range" id="f-focus" min="1" max="10" step="1">
+        </div>
+        <div class="metric">
+          <label for="f-stress">Stress <span id="f-stress-val" class="metric-val">—</span></label>
+          <input type="range" id="f-stress" min="1" max="10" step="1">
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label for="f-body">What does my body need right now?</label>
+        <input type="text" id="f-body" placeholder="Rest, movement, food, water…">
+      </div>
+
+      <div class="field-group">
+        <label for="f-authentic">When did I feel most authentic today?</label>
+        <textarea id="f-authentic" rows="2" placeholder="A moment when you were fully yourself"></textarea>
+      </div>
+
+      <!-- Weekly prompts (collapsible) -->
+      <button class="weekly-toggle" id="weeklyToggle" type="button" aria-expanded="false">
+        Weekly prompts <span class="chevron">›</span>
+      </button>
+      <div class="weekly-fields" id="weeklyFields" hidden>
+        <div class="field-group">
+          <label for="f-enjoyed">What did I enjoy doing today?</label>
+          <textarea id="f-enjoyed" rows="2" placeholder=""></textarea>
+        </div>
+        <div class="field-group">
+          <label for="f-engaged">When did I feel most engaged this week?</label>
+          <textarea id="f-engaged" rows="2" placeholder=""></textarea>
+        </div>
+        <div class="field-group">
+          <label for="f-problems">What problems around me actually annoy me enough that I want to solve them?</label>
+          <textarea id="f-problems" rows="2" placeholder=""></textarea>
+        </div>
+      </div>
+
       <button class="btn" id="saveEntry">Save entry</button>
-    </section>
+    </div>
+  </section>
 
-    <section class="card">
+  <!-- HISTORY TAB -->
+  <section class="tab-panel" id="tab-history" hidden>
+    <p class="hint empty-hint" id="historyEmpty">No entries yet. Write your first one.</p>
+    <div id="historyList"></div>
+  </section>
+
+  <!-- GOALS TAB -->
+  <section class="tab-panel" id="tab-goals" hidden>
+    <div class="card">
       <h2>Goals</h2>
       <ul class="goals" id="goalList"></ul>
-      <p class="hint" id="goalsEmpty">No active goals. Name one thing you're actually working toward.</p>
+      <p class="hint" id="goalsEmpty" hidden>No goals yet.</p>
       <form id="goalForm" class="goal-form">
-        <input type="text" id="goalName" placeholder="New goal" maxlength="80" required>
-        <button class="btn" type="submit">Add goal</button>
+        <input type="text" id="goalName" placeholder="Add a goal" maxlength="80" required>
+        <button class="btn" type="submit">Add</button>
       </form>
-    </section>
-
-    <section class="card">
-      <h2>Journal</h2>
-      <ul class="journal" id="journalList"></ul>
-      <p class="hint" id="journalEmpty">Saved entries collect here, newest first.</p>
-    </section>
-  </main>
+    </div>
+  </section>
 
   <footer>
-    <p>Runs on your schedule. Read on your phone.</p>
+    <p>Track yourself.</p>
   </footer>
 
   <script src="app.js"></script>

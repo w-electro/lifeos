@@ -2,60 +2,165 @@
 
 const $ = (id) => document.getElementById(id);
 const store = {
-  get(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
-    catch { return fallback; }
-  },
-  set(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
+  get: (k, fb) => { try { return JSON.parse(localStorage.getItem(k)) ?? fb; } catch { return fb; } },
+  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
 
-// ---- Date + phase ----
+// ---- date ----
 const now = new Date();
-const dateKey = now.toISOString().slice(0, 10);
-$("dateLine").textContent = now.toLocaleDateString(undefined, {
-  weekday: "long", month: "long", day: "numeric",
+const dateKey = now.toISOString().slice(0, 10); // YYYY-MM-DD
+const friendlyDate = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+$("dateLine").textContent = friendlyDate;
+$("entryDate").textContent = friendlyDate;
+
+// ---- tabs ----
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll(".tab").forEach((t) => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
+    document.querySelectorAll(".tab-panel").forEach((p) => { p.classList.remove("active"); p.hidden = true; });
+    btn.classList.add("active");
+    btn.setAttribute("aria-selected", "true");
+    const panel = $(`tab-${target}`);
+    panel.hidden = false;
+    panel.classList.add("active");
+  });
 });
 
-const hour = now.getHours() + now.getMinutes() / 60;
-const isEvening = hour >= 17;
-const phase = isEvening ? "evening" : "morning";
+// ---- metrics ----
+["energy", "focus", "stress"].forEach((id) => {
+  const slider = $(`f-${id}`);
+  const val = $(`f-${id}-val`);
+  slider.addEventListener("input", () => { val.textContent = slider.value; });
+});
 
-$("phaseLine").textContent = isEvening
-  ? "Evening. Close the day with clarity."
-  : "Morning. Set the lens for the day.";
+// ---- weekly toggle ----
+$("weeklyToggle").addEventListener("click", () => {
+  const expanded = $("weeklyToggle").getAttribute("aria-expanded") === "true";
+  $("weeklyToggle").setAttribute("aria-expanded", String(!expanded));
+  $("weeklyFields").hidden = expanded;
+});
 
-// ---- Day arc: sun position from 6:00 to 22:00 ----
-(function positionSun() {
-  const t = Math.min(Math.max((hour - 6) / 16, 0), 1);
-  const angle = Math.PI * (1 - t); // PI at sunrise (left) -> 0 at night (right)
-  const cx = 160 + 130 * Math.cos(angle);
-  const cy = 112 - 130 * Math.sin(angle);
-  const dot = $("sunDot");
-  dot.setAttribute("cx", cx.toFixed(1));
-  dot.setAttribute("cy", cy.toFixed(1));
-})();
+// ---- load today's draft ----
+const FIELDS = ["sleep","mood","thoughts","motivation","reality","energy","focus","stress","body","authentic","enjoyed","engaged","problems"];
+const draft = store.get(`draft:${dateKey}`, {});
+FIELDS.forEach((f) => {
+  const el = $(`f-${f}`);
+  if (!el) return;
+  if (el.type === "range") {
+    if (draft[f]) { el.value = draft[f]; $(`f-${f}-val`).textContent = draft[f]; }
+  } else {
+    if (draft[f]) el.value = draft[f];
+  }
+});
 
-// ---- Today's entry ----
-const entryKey = `entry:${dateKey}:${phase}`;
-$("entryHeading").textContent = isEvening ? "Evening reflection" : "Morning strategy";
-$("entryHint").textContent = isEvening
-  ? "What was today actually about? Write it, or paste tonight's reflection email."
-  : "Today's strategy arrives by email at 7:00. Paste it here, or write your own focus.";
-$("entryText").value = store.get(entryKey, "");
+// auto-save draft on input
+FIELDS.forEach((f) => {
+  const el = $(`f-${f}`);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    const d = store.get(`draft:${dateKey}`, {});
+    d[f] = el.value;
+    store.set(`draft:${dateKey}`, d);
+  });
+});
 
+// ---- save entry ----
 $("saveEntry").addEventListener("click", () => {
-  const text = $("entryText").value.trim();
-  if (!text) return;
-  store.set(entryKey, text);
-  const journal = store.get("journal", []).filter((e) => e.key !== entryKey);
-  journal.unshift({ key: entryKey, date: dateKey, phase, text });
-  store.set("journal", journal.slice(0, 60));
-  renderJournal();
-  $("saveEntry").textContent = "Saved";
-  setTimeout(() => { $("saveEntry").textContent = "Save entry"; }, 1200);
+  const entry = { date: dateKey, savedAt: new Date().toISOString() };
+  FIELDS.forEach((f) => {
+    const el = $(`f-${f}`);
+    if (el) entry[f] = el.value.trim();
+  });
+
+  const journal = store.get("journal", []).filter((e) => e.date !== dateKey);
+  journal.unshift(entry);
+  store.set("journal", journal.slice(0, 365));
+  store.set(`draft:${dateKey}`, entry); // keep draft in sync
+
+  renderHistory();
+
+  $("saveEntry").textContent = "Saved ✓";
+  setTimeout(() => { $("saveEntry").textContent = "Save entry"; }, 1400);
 });
 
-// ---- Goals ----
+// ---- history ----
+function renderHistory() {
+  const journal = store.get("journal", []);
+  $("historyEmpty").hidden = journal.length > 0;
+  const list = $("historyList");
+  list.textContent = "";
+
+  journal.forEach((e) => {
+    const detail = document.createElement("details");
+    detail.className = "history-entry";
+
+    const summary = document.createElement("summary");
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = formatDateKey(e.date);
+    const preview = document.createElement("span");
+    preview.className = "history-preview";
+    preview.textContent = e.mood || e.thoughts || "—";
+    const arrow = document.createElement("span");
+    arrow.className = "history-arrow";
+    arrow.textContent = "›";
+    summary.append(meta, preview, arrow);
+    detail.append(summary);
+
+    const body = document.createElement("div");
+    body.className = "history-body";
+
+    // scores row
+    const scores = [["energy","Energy"],["focus","Focus"],["stress","Stress"]];
+    const scoreRow = document.createElement("div");
+    scoreRow.className = "scores";
+    scores.forEach(([f, label]) => {
+      if (!e[f]) return;
+      const chip = document.createElement("span");
+      chip.className = "score-chip";
+      chip.textContent = `${label} `;
+      const val = document.createElement("span");
+      val.textContent = `${e[f]}/10`;
+      chip.append(val);
+      scoreRow.append(chip);
+    });
+    if (scoreRow.children.length) body.append(scoreRow);
+
+    // text fields
+    const textFields = [
+      ["sleep","Time of sleep"], ["mood","Mood"], ["thoughts","Thoughts"],
+      ["motivation","Motivation"], ["reality","Perception of Reality"],
+      ["body","What my body needed"], ["authentic","Most authentic moment"],
+      ["enjoyed","Enjoyed"], ["engaged","Most engaged"], ["problems","Problems worth solving"],
+    ];
+    textFields.forEach(([f, label]) => {
+      if (!e[f]) return;
+      const row = document.createElement("div");
+      row.className = "history-field";
+      const lbl = document.createElement("div");
+      lbl.className = "lbl";
+      lbl.textContent = label;
+      const val = document.createElement("div");
+      val.className = "val";
+      val.textContent = e[f];
+      row.append(lbl, val);
+      body.append(row);
+    });
+
+    detail.append(body);
+    list.append(detail);
+  });
+}
+
+function formatDateKey(k) {
+  if (!k) return "";
+  const d = new Date(k + "T12:00:00");
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+
+// ---- goals ----
 function renderGoals() {
   const goals = store.get("goals", []);
   $("goalsEmpty").hidden = goals.length > 0;
@@ -69,11 +174,10 @@ function renderGoals() {
     name.textContent = goal.name;
     const pct = document.createElement("span");
     pct.className = "pct";
-    pct.textContent = `${goal.progress}%`;
+    pct.textContent = `${goal.progress ?? 0}%`;
     row.append(name, pct);
     const slider = document.createElement("input");
-    slider.type = "range";
-    slider.min = "0"; slider.max = "100"; slider.value = goal.progress;
+    slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.value = goal.progress ?? 0;
     slider.setAttribute("aria-label", `Progress for ${goal.name}`);
     slider.addEventListener("input", () => {
       goal.progress = Number(slider.value);
@@ -97,39 +201,16 @@ $("goalForm").addEventListener("submit", (e) => {
   renderGoals();
 });
 
-// ---- Journal ----
-function renderJournal() {
-  const journal = store.get("journal", []);
-  $("journalEmpty").hidden = journal.length > 0;
-  const list = $("journalList");
-  list.textContent = "";
-  journal.slice(0, 14).forEach((entry) => {
-    const li = document.createElement("li");
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = `${entry.date} — ${entry.phase}`;
-    const body = document.createElement("div");
-    body.className = "body";
-    body.textContent = entry.text.length > 160 ? entry.text.slice(0, 160) + "…" : entry.text;
-    li.append(meta, body);
-    list.append(li);
-  });
-}
-
-renderGoals();
-renderJournal();
-
-// ---- Offline indicator ----
-function updateOnline() { $("offlineNote").hidden = navigator.onLine; }
+// ---- offline ----
+const updateOnline = () => { $("offlineNote").hidden = navigator.onLine; };
 window.addEventListener("online", updateOnline);
 window.addEventListener("offline", updateOnline);
 updateOnline();
 
-// ---- Service worker ----
+// ---- service worker ----
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
-  });
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
 }
+
+renderGoals();
+renderHistory();
