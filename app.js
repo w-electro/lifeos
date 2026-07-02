@@ -201,15 +201,127 @@ $("goalForm").addEventListener("submit", (e) => {
   renderGoals();
 });
 
+// ---- journal.txt parser (runs in browser) ----
+function parseJournalTxt(raw) {
+  const lines = raw.split(/\r?\n/);
+  const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+  const FULL_DATE_RE = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(\w+ \d+,\s*\d{4})/i;
+  const NUMBERED_RE = /^\d+-\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\w+)-(\d+)/i;
+
+  function toISO(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  function parseFullDate(line) {
+    const m = line.match(FULL_DATE_RE);
+    if (!m) return null;
+    const d = new Date(m[2].replace(/\s+/," "));
+    return isNaN(d) ? null : toISO(d);
+  }
+  function resolveNumbered(line, ctxYear) {
+    const m = line.match(NUMBERED_RE);
+    if (!m) return null;
+    const mon = MONTHS[m[2].slice(0,3).toLowerCase()];
+    const day = parseInt(m[3], 10);
+    if (!mon || !day) return null;
+    const dayName = m[1].toLowerCase();
+    const dayIdx = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"].indexOf(dayName);
+    for (const yr of [ctxYear, ctxYear-1, ctxYear+1, 2025, 2024, 2026]) {
+      if (!yr) continue;
+      const d = new Date(yr, mon-1, day);
+      if (!isNaN(d) && (dayIdx === -1 || d.getDay() === dayIdx))
+        return `${yr}-${String(mon).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    }
+    return `${ctxYear||2025}-${String(mon).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  }
+  function isHeader(line) {
+    return FULL_DATE_RE.test(line) || NUMBERED_RE.test(line);
+  }
+  function extractNum(str) {
+    if (!str) return "";
+    const m = str.match(/(\d+)\s*\/\s*10/);
+    return m ? m[1] : str.trim();
+  }
+  function getField(block, label) {
+    const re = new RegExp(`${label}[:\\s]*([\\s\\S]*?)(?=\\n\\n|\\n[A-Z]|\\nWeekly|$)`, "i");
+    const m = block.match(re);
+    return m ? m[1].trim() : "";
+  }
+
+  const journalStart = lines.findIndex((l) => /^Journal:/i.test(l.trim()));
+  const src = journalStart >= 0 ? lines.slice(journalStart + 1) : lines;
+
+  const blocks = [];
+  let cur = null;
+  let lastYear = new Date().getFullYear();
+
+  for (const line of src) {
+    if (isHeader(line)) {
+      if (cur) blocks.push(cur);
+      let date = parseFullDate(line) || resolveNumbered(line, lastYear);
+      if (date) lastYear = parseInt(date, 10);
+      cur = { date: date || null, lines: [] };
+    } else if (cur) {
+      cur.lines.push(line);
+    }
+  }
+  if (cur) blocks.push(cur);
+
+  const STRUCTURED = /Time of sleep|^Mood:|^Thoughts:|Energy Level|Focus Level/im;
+
+  const entries = blocks
+    .filter((b) => b.date)
+    .map((b) => {
+      const block = b.lines.join("\n");
+      const obj = { date: b.date, savedAt: b.date + "T12:00:00.000Z" };
+      if (STRUCTURED.test(block)) {
+        obj.sleep      = getField(block, "Time of sleep");
+        obj.mood       = getField(block, "Mood");
+        obj.thoughts   = getField(block, "Thoughts");
+        obj.motivation = getField(block, "Motivation");
+        obj.reality    = getField(block, "Perception of Reality");
+        obj.energy     = extractNum(getField(block, "Energy Level"));
+        obj.focus      = extractNum(getField(block, "Focus Level"));
+        obj.stress     = extractNum(getField(block, "What is my stress level"));
+        obj.body       = getField(block, "What does my body need right now");
+        obj.authentic  = getField(block, "When did I feel most authentic today");
+        obj.enjoyed    = getField(block, "What did I enjoy doing today");
+        obj.engaged    = getField(block, "When did I feel most engaged this week");
+        obj.problems   = getField(block, "What problems around me actually annoy me enough");
+      } else {
+        obj.thoughts = block.trim();
+      }
+      return obj;
+    })
+    .reduce((acc, entry) => {
+      const ex = acc.find((e) => e.date === entry.date);
+      if (ex) {
+        if (entry.thoughts && ex.thoughts) ex.thoughts += "\n\n" + entry.thoughts;
+        else Object.assign(ex, entry);
+      } else {
+        acc.push(entry);
+      }
+      return acc;
+    }, [])
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  return entries;
+}
+
 // ---- import ----
 $("importFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  $("importStatus").textContent = "Reading…";
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const incoming = JSON.parse(reader.result);
-      if (!Array.isArray(incoming)) throw new Error("Expected an array");
+      let incoming;
+      if (file.name.endsWith(".txt")) {
+        incoming = parseJournalTxt(reader.result);
+      } else {
+        incoming = JSON.parse(reader.result);
+        if (!Array.isArray(incoming)) throw new Error("not an array");
+      }
       const existing = store.get("journal", []);
       const existingDates = new Set(existing.map((e) => e.date));
       const added = incoming.filter((e) => !existingDates.has(e.date));
@@ -219,7 +331,7 @@ $("importFile").addEventListener("change", (e) => {
       $("importStatus").textContent = `${added.length} entries added`;
       setTimeout(() => { $("importStatus").textContent = ""; }, 3000);
     } catch {
-      $("importStatus").textContent = "Invalid file";
+      $("importStatus").textContent = "Couldn't read file";
     }
     e.target.value = "";
   };
