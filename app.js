@@ -76,7 +76,15 @@ $("saveEntry").addEventListener("click", () => {
   const journal = store.get("journal", []).filter((e) => e.date !== dateKey);
   journal.unshift(entry);
   store.set("journal", journal.slice(0, 365));
-  store.set(`draft:${dateKey}`, entry); // keep draft in sync
+  store.set(`draft:${dateKey}`, entry);
+  store.set(`draft:${dateKey}`, {});
+
+  FIELDS.forEach((f) => {
+    const el = $(`f-${f}`);
+    if (!el) return;
+    if (el.type === "range") { el.value = 5; $(`f-${f}-val`).textContent = "—"; }
+    else el.value = "";
+  });
 
   renderHistory();
 
