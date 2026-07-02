@@ -376,10 +376,19 @@ const setStatus = (msg, sticky) => {
   if (!sticky) setTimeout(() => { if ($("importStatus").textContent === msg) $("importStatus").textContent = ""; }, 3000);
 };
 
+const bar = {
+  show() { $("syncBarWrap").hidden = false; $("syncBar").classList.remove("error"); this.set(0); },
+  set(pct) { $("syncBar").style.width = pct + "%"; },
+  done() { this.set(100); setTimeout(() => { $("syncBarWrap").hidden = true; this.set(0); }, 600); },
+  fail() { $("syncBar").classList.add("error"); this.set(100); setTimeout(() => { $("syncBarWrap").hidden = true; this.set(0); }, 1200); },
+};
+
 $("syncBtn").addEventListener("click", async () => {
   if (!getToken()) { $("tokenRow").hidden = false; $("tokenInput").focus(); return; }
   const entries = store.get("journal", []);
   if (!entries.length) { setStatus("Nothing to sync"); return; }
+
+  bar.show(); bar.set(15);
   setStatus("Syncing…", true);
 
   const headers = {
@@ -392,13 +401,17 @@ $("syncBtn").addEventListener("click", async () => {
   let sha = null;
   try { const r = await fetch(url, { headers }); if (r.ok) sha = (await r.json()).sha; } catch {}
 
+  bar.set(45);
+
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(entries, null, 2))));
   const body = { message: `sync: journal ${dateKey}`, content, branch: GH_BRANCH };
   if (sha) body.sha = sha;
 
+  bar.set(65);
+
   try {
     const r = await fetch(url, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (r.ok) { setStatus(`${entries.length} entries synced ✓`); }
+    if (r.ok) { bar.done(); setStatus(`${entries.length} entries synced ✓`); }
     else {
       const e = await r.json().catch(() => ({}));
       const msg = (e.message || "").toLowerCase();
@@ -406,10 +419,10 @@ $("syncBtn").addEventListener("click", async () => {
       if (msg.includes("bad credentials")) hint = "Bad token — re-enter it below";
       else if (r.status === 404) hint = "Token can't access lifeos-data — check repo + Contents: Write permission";
       else if (r.status === 422) hint = "Sync conflict — try again";
-      setStatus(hint);
+      bar.fail(); setStatus(hint);
       $("tokenRow").hidden = false;
     }
-  } catch { setStatus("Network error"); }
+  } catch { bar.fail(); setStatus("Network error — tap Sync to retry"); }
 });
 
 $("tokenSave").addEventListener("click", () => {

@@ -244,6 +244,22 @@ input[type="range"] {
 .btn-outline:active { opacity: 0.75; }
 .import-status { font-size: 0.82rem; color: var(--text-dim); }
 
+.sync-bar-wrap {
+  height: 3px;
+  background: var(--edge);
+  border-radius: 2px;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+.sync-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--gold);
+  border-radius: 2px;
+  transition: width 0.4s ease, background 0.3s;
+}
+.sync-bar.error { background: #c0392b; }
+
 .token-row {
   display: flex;
   gap: 0.5rem;
