@@ -206,7 +206,10 @@ function parseJournalTxt(raw) {
   const lines = raw.split(/\r?\n/);
   const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
   const FULL_DATE_RE = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(\w+ \d+,\s*\d{4})/i;
-  const NUMBERED_RE = /^\d+-\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\w+)-(\d+)/i;
+  // Handles ALL numbered formats — day name optional and abbreviated:
+  //   "39- Thursday Oct-2"  "80- Dec-21"  "81- Wed-Dec 31"
+  //   "82- Sat- 3 Jan"  "89- Tuesday Feb - 9"  "96- Sunday, June 7th"
+  const NUMBERED_RE = /^\d+-\s+(?:(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)[,\-\s]+)?(?:(\w+)\s*-\s*(\d+)|(\w+)\s+(\d+)(?:st|nd|rd|th)?|(\d+)(?:st|nd|rd|th)?\s+(\w+))/i;
 
   function toISO(d) {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -217,21 +220,35 @@ function parseJournalTxt(raw) {
     const d = new Date(m[2].replace(/\s+/," "));
     return isNaN(d) ? null : toISO(d);
   }
-  function resolveNumbered(line, ctxYear) {
+  function resolveNumbered(line, ctxDate) {
     const m = line.match(NUMBERED_RE);
     if (!m) return null;
-    const mon = MONTHS[m[2].slice(0,3).toLowerCase()];
-    const day = parseInt(m[3], 10);
+    let mon, day;
+    if (m[1] && m[2]) { mon = MONTHS[m[1].slice(0,3).toLowerCase()]; day = parseInt(m[2], 10); }
+    else if (m[3] && m[4]) { mon = MONTHS[m[3].slice(0,3).toLowerCase()]; day = parseInt(m[4], 10); }
+    else if (m[5] && m[6]) { day = parseInt(m[5], 10); mon = MONTHS[m[6].slice(0,3).toLowerCase()]; }
     if (!mon || !day) return null;
-    const dayName = m[1].toLowerCase();
-    const dayIdx = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"].indexOf(dayName);
-    for (const yr of [ctxYear, ctxYear-1, ctxYear+1, 2025, 2024, 2026]) {
-      if (!yr) continue;
-      const d = new Date(yr, mon-1, day);
-      if (!isNaN(d) && (dayIdx === -1 || d.getDay() === dayIdx))
-        return `${yr}-${String(mon).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const pad = (n) => String(n).padStart(2, "0");
+    // No context means we're at the start of a fresh numbered section.
+    // Use day-of-week matching to pick the right year instead of monotonic.
+    if (!ctxDate) {
+      const dayMatch = line.match(/(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)/i);
+      const dayIdx = dayMatch ? ["sun","mon","tue","wed","thu","fri","sat"].indexOf(dayMatch[0].slice(0,3).toLowerCase()) : -1;
+      for (const yr of [2025, 2024, 2026, 2023]) {
+        const d = new Date(yr, mon - 1, day);
+        if (!isNaN(d) && (dayIdx === -1 || d.getDay() === dayIdx)) return `${yr}-${pad(mon)}-${pad(day)}`;
+      }
+      return `2025-${pad(mon)}-${pad(day)}`;
     }
-    return `${ctxYear||2025}-${String(mon).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const ctxYear = parseInt(ctxDate.slice(0,4), 10);
+    const ctxMon  = parseInt(ctxDate.slice(5,7), 10);
+    const ctxDay  = parseInt(ctxDate.slice(8,10), 10);
+    for (const yr of [ctxYear, ctxYear + 1]) {
+      if (yr > new Date().getFullYear() + 1) break;
+      if (yr > ctxYear || (yr === ctxYear && (mon > ctxMon || (mon === ctxMon && day >= ctxDay))))
+        return `${yr}-${pad(mon)}-${pad(day)}`;
+    }
+    return `${ctxYear}-${pad(mon)}-${pad(day)}`;
   }
   function isHeader(line) {
     return FULL_DATE_RE.test(line) || NUMBERED_RE.test(line);
@@ -242,7 +259,8 @@ function parseJournalTxt(raw) {
     return m ? m[1] : str.trim();
   }
   function getField(block, label) {
-    const re = new RegExp(`${label}[:\\s]*([\\s\\S]*?)(?=\\n\\n|\\n[A-Z]|\\nWeekly|$)`, "i");
+    // [?:\s]* handles labels ending with "?:" in the source
+    const re = new RegExp(`${label}[?:\\s]*([\\s\\S]*?)(?=\\n\\n|\\n[A-Z]|\\nWeekly|$)`, "i");
     const m = block.match(re);
     return m ? m[1].trim() : "";
   }
@@ -252,13 +270,14 @@ function parseJournalTxt(raw) {
 
   const blocks = [];
   let cur = null;
-  let lastYear = new Date().getFullYear();
+  let lastDate = null;
 
   for (const line of src) {
     if (isHeader(line)) {
       if (cur) blocks.push(cur);
-      let date = parseFullDate(line) || resolveNumbered(line, lastYear);
-      if (date) lastYear = parseInt(date, 10);
+      if (/^1-\s+/.test(line)) lastDate = null;
+      let date = parseFullDate(line) || resolveNumbered(line, lastDate);
+      if (date) lastDate = date;
       cur = { date: date || null, lines: [] };
     } else if (cur) {
       cur.lines.push(line);
@@ -336,6 +355,19 @@ $("importFile").addEventListener("change", (e) => {
     e.target.value = "";
   };
   reader.readAsText(file);
+});
+
+// ---- export ----
+$("exportBtn").addEventListener("click", () => {
+  const journal = store.get("journal", []);
+  if (!journal.length) { $("importStatus").textContent = "Nothing to export"; setTimeout(() => { $("importStatus").textContent = ""; }, 2000); return; }
+  const blob = new Blob([JSON.stringify(journal, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `lifeos-export-${dateKey}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 });
 
 // ---- offline ----
