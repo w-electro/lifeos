@@ -228,4 +228,20 @@ input[type="range"] {
 .goal-form .btn { margin-top: 0; width: auto; flex-shrink: 0; }
 .goal-form input { flex: 1; }
 
+.import-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.btn-outline {
+  background: none;
+  color: var(--gold);
+  border: 1px solid var(--gold-dim);
+  border-radius: 0.55rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-outline:active { opacity: 0.75; }
+.import-status { font-size: 0.82rem; color: var(--text-dim); }
+
 footer { text-align: center; color: var(--text-dim); font-size: 0.78rem; padding-top: 1.5rem; }

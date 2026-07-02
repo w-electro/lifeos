@@ -119,6 +119,11 @@
 
   <!-- HISTORY TAB -->
   <section class="tab-panel" id="tab-history" hidden>
+    <div class="import-row">
+      <label class="btn btn-outline" for="importFile">Import journal</label>
+      <input type="file" id="importFile" accept=".json" style="display:none">
+      <span class="import-status" id="importStatus"></span>
+    </div>
     <p class="hint empty-hint" id="historyEmpty">No entries yet. Write your first one.</p>
     <div id="historyList"></div>
   </section>

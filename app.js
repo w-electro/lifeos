@@ -201,6 +201,31 @@ $("goalForm").addEventListener("submit", (e) => {
   renderGoals();
 });
 
+// ---- import ----
+$("importFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const incoming = JSON.parse(reader.result);
+      if (!Array.isArray(incoming)) throw new Error("Expected an array");
+      const existing = store.get("journal", []);
+      const existingDates = new Set(existing.map((e) => e.date));
+      const added = incoming.filter((e) => !existingDates.has(e.date));
+      const merged = [...added, ...existing].sort((a, b) => b.date.localeCompare(a.date));
+      store.set("journal", merged.slice(0, 2000));
+      renderHistory();
+      $("importStatus").textContent = `${added.length} entries added`;
+      setTimeout(() => { $("importStatus").textContent = ""; }, 3000);
+    } catch {
+      $("importStatus").textContent = "Invalid file";
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
+});
+
 // ---- offline ----
 const updateOnline = () => { $("offlineNote").hidden = navigator.onLine; };
 window.addEventListener("online", updateOnline);
