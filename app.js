@@ -368,6 +368,7 @@ $("importFile").addEventListener("change", (e) => {
 // ---- github sync ----
 const GH_REPO   = "w-electro/lifeos-data";
 const GH_FILE   = "journal-entries/entries.json";
+const GH_DIGEST = "journal-entries/journal-digest.md";
 const GH_BRANCH = "main";
 
 const getToken = () => localStorage.getItem("gh_token") || "";
@@ -383,6 +384,70 @@ const bar = {
   fail() { $("syncBar").classList.add("error"); this.set(100); setTimeout(() => { $("syncBarWrap").hidden = true; this.set(0); }, 1200); },
 };
 
+// Build the longitudinal digest deterministically in JS so the routine gets
+// trustworthy numbers (models can't reliably average hundreds of rows) plus a
+// compressed 5-year timeline that never gets truncated on read.
+function buildDigest(entries) {
+  const num = (v) => { const m = String(v ?? "").match(/\d+/); return m ? parseInt(m[0], 10) : null; };
+  const avg = (arr) => { const n = arr.map(num).filter((x) => x != null); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : null; };
+  const fmt = (n) => (n == null ? "–" : n.toFixed(1));
+  const delta = (r, b) => (r == null || b == null) ? "" : ` (${r - b >= 0 ? "+" : ""}${(r - b).toFixed(1)} vs all-time)`;
+  const short = (e) => { let t = (e.thoughts || e.mood || e.reality || "").replace(/\s+/g, " ").trim(); return t.length > 130 ? t.slice(0, 127) + "…" : t; };
+
+  const chron = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const newest = [...entries].sort((a, b) => b.date.localeCompare(a.date));
+  const span = chron.length ? `${chron[0].date} → ${chron[chron.length - 1].date}` : "—";
+  const allE = avg(entries.map((e) => e.energy)), allF = avg(entries.map((e) => e.focus)), allS = avg(entries.map((e) => e.stress));
+  const last7 = newest.slice(0, 7);
+  const cutoff = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const last30 = newest.filter((e) => e.date >= cutoff);
+
+  const months = {};
+  for (const e of chron) (months[e.date.slice(0, 7)] ||= []).push(e);
+
+  let md = `# LifeOS Journal Digest\n`;
+  md += `_Auto-generated on each sync. This is the COMPLETE longitudinal record, compressed for analysis. Read this for the full arc; read entries.json (newest-first) for verbatim recent detail._\n\n`;
+  md += `**Span:** ${span} · **${entries.length} entries**\n\n`;
+  md += `## Baselines (all-time averages)\n- Energy ${fmt(allE)} · Focus ${fmt(allF)} · Stress ${fmt(allS)}\n\n`;
+  md += `## Recent vs baseline\n`;
+  md += `- Last 7 entries — Energy ${fmt(avg(last7.map(e=>e.energy)))}${delta(avg(last7.map(e=>e.energy)),allE)}, Focus ${fmt(avg(last7.map(e=>e.focus)))}${delta(avg(last7.map(e=>e.focus)),allF)}, Stress ${fmt(avg(last7.map(e=>e.stress)))}${delta(avg(last7.map(e=>e.stress)),allS)}\n`;
+  md += `- Last 30 days (${last30.length}) — Energy ${fmt(avg(last30.map(e=>e.energy)))}, Focus ${fmt(avg(last30.map(e=>e.focus)))}, Stress ${fmt(avg(last30.map(e=>e.stress)))}\n\n`;
+  md += `## Monthly arc (oldest → newest)\n`;
+  for (const key of Object.keys(months).sort()) {
+    const ms = months[key];
+    md += `\n### ${key} · ${ms.length} entr${ms.length === 1 ? "y" : "ies"} · E ${fmt(avg(ms.map(e=>e.energy)))} F ${fmt(avg(ms.map(e=>e.focus)))} S ${fmt(avg(ms.map(e=>e.stress)))}\n`;
+    for (const e of ms) { const s = short(e); if (s) md += `- ${e.date.slice(8)}: ${s}\n`; }
+  }
+  return md;
+}
+
+// PUT a single file via the GitHub Contents API (GET current sha, then PUT).
+async function ghPut(path, text, message) {
+  const headers = {
+    "Authorization": `Bearer ${getToken()}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const url = `https://api.github.com/repos/${GH_REPO}/contents/${path}`;
+  let sha = null;
+  try { const r = await fetch(url, { headers }); if (r.ok) sha = (await r.json()).sha; } catch {}
+  const content = btoa(unescape(encodeURIComponent(text)));
+  const body = { message, content, branch: GH_BRANCH };
+  if (sha) body.sha = sha;
+  const r = await fetch(url, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.ok) return { ok: true };
+  const e = await r.json().catch(() => ({}));
+  return { ok: false, status: r.status, message: e.message || "" };
+}
+
+function syncHint(r) {
+  const msg = (r.message || "").toLowerCase();
+  if (msg.includes("bad credentials")) return "Bad token — re-enter it below";
+  if (r.status === 404) return "Token can't access lifeos-data — check repo + Contents: Write permission";
+  if (r.status === 422) return "Sync conflict — try again";
+  return `Sync failed (${r.status || "network"})`;
+}
+
 $("syncBtn").addEventListener("click", async () => {
   if (!getToken()) { $("tokenRow").hidden = false; $("tokenInput").focus(); return; }
   const entries = store.get("journal", []);
@@ -391,37 +456,18 @@ $("syncBtn").addEventListener("click", async () => {
   bar.show(); bar.set(15);
   setStatus("Syncing…", true);
 
-  const headers = {
-    "Authorization": `Bearer ${getToken()}`,
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  const url = `https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
-
-  let sha = null;
-  try { const r = await fetch(url, { headers }); if (r.ok) sha = (await r.json()).sha; } catch {}
-
-  bar.set(45);
-
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(entries, null, 2))));
-  const body = { message: `sync: journal ${dateKey}`, content, branch: GH_BRANCH };
-  if (sha) body.sha = sha;
-
-  bar.set(65);
-
   try {
-    const r = await fetch(url, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (r.ok) { bar.done(); setStatus(`${entries.length} entries synced ✓`); }
-    else {
-      const e = await r.json().catch(() => ({}));
-      const msg = (e.message || "").toLowerCase();
-      let hint = `Sync failed (${r.status})`;
-      if (msg.includes("bad credentials")) hint = "Bad token — re-enter it below";
-      else if (r.status === 404) hint = "Token can't access lifeos-data — check repo + Contents: Write permission";
-      else if (r.status === 422) hint = "Sync conflict — try again";
-      bar.fail(); setStatus(hint);
-      $("tokenRow").hidden = false;
+    const r1 = await ghPut(GH_FILE, JSON.stringify(entries, null, 2), `sync: journal ${dateKey}`);
+    bar.set(60);
+    if (!r1.ok) {
+      bar.fail(); setStatus(syncHint(r1));
+      if (r1.status === 404 || (r1.message || "").toLowerCase().includes("bad credentials")) $("tokenRow").hidden = false;
+      return;
     }
+    const r2 = await ghPut(GH_DIGEST, buildDigest(entries), `sync: digest ${dateKey}`);
+    bar.set(95);
+    if (!r2.ok) { bar.fail(); setStatus("Entries synced; digest failed — tap Sync to retry"); return; }
+    bar.done(); setStatus(`${entries.length} entries + digest synced ✓`);
   } catch { bar.fail(); setStatus("Network error — tap Sync to retry"); }
 });
 

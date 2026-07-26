@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "lifeos-shell-v3";
+const CACHE_NAME = "lifeos-shell-v4";
 const SHELL = [
   "./",
   "./index.html",
