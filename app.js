@@ -27,6 +27,28 @@ const friendlyDate = now.toLocaleDateString(undefined, { weekday: "long", month:
 $("dateLine").textContent = friendlyDate;
 $("entryDate").textContent = friendlyDate;
 
+// ---- force refresh ----
+// Standalone/home-screen mode has no browser chrome, so there's no pull-to-refresh
+// or reload button — and the service worker serves cached files first, so a normal
+// reload can keep showing stale code even after the app itself has been updated.
+// This does a real hard refresh: drop the cached shell, drop the old service worker,
+// then reload so everything is re-fetched from the network.
+$("refreshBtn").addEventListener("click", async () => {
+  const btn = $("refreshBtn");
+  btn.classList.add("spinning");
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {}
+  location.reload();
+});
+
 // ---- tabs ----
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {

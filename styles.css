@@ -34,7 +34,26 @@ body {
 }
 
 /* ---- header ---- */
-.masthead { text-align: center; padding-bottom: 0.8rem; }
+.masthead { position: relative; text-align: center; padding-bottom: 0.8rem; }
+.refresh-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 0;
+  cursor: pointer;
+}
+.refresh-btn svg { width: 1.2rem; height: 1.2rem; }
+.refresh-btn:active { color: var(--gold); }
+.refresh-btn.spinning svg { animation: refresh-spin 0.8s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
 .mark { width: 2.4rem; height: 2.4rem; display: block; margin: 0 auto 0.35rem; }
 h1 {
   font-family: ui-serif, "New York", Georgia, serif;
