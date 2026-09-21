@@ -6,6 +6,20 @@ const store = {
   set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
 
+// ---- one-time fix: the stress slider had no 0 (min was 1), so every "no stress"
+// day was forced to log a 1. Runs once, rewrites any stored 1 to 0, then never again
+// (a real future 1 is meaningful now that 0 exists as an option).
+(function fixStressFloorOnce() {
+  if (store.get("stress_floor_fixed_v1", false)) return;
+  const journal = store.get("journal", []);
+  let changed = false;
+  for (const e of journal) {
+    if (e.stress === "1") { e.stress = "0"; changed = true; }
+  }
+  if (changed) store.set("journal", journal);
+  store.set("stress_floor_fixed_v1", true);
+})();
+
 // ---- date ----
 const now = new Date();
 const dateKey = now.toISOString().slice(0, 10); // YYYY-MM-DD
